@@ -17,10 +17,18 @@
             <input
                 type="text"
                 id="searchInput"
-                placeholder="Search for a horror movie..."
+                placeholder="Filter movies..."
                 autocomplete="off"
             >
-            <div id="searchResults" class="search-results"></div>
+        </div>
+
+        <div class="movie-list-section">
+            <div class="movie-list-header">
+                <h2>Browse Movies <span id="movieCount"></span></h2>
+            </div>
+            <div id="movieList" class="movie-list">
+                <div class="loading">Loading movies...</div>
+            </div>
         </div>
 
         <div id="selectedMovie" class="selected-movie" style="display: none;">
@@ -40,12 +48,15 @@
 
     <script>
         const searchInput = document.getElementById('searchInput');
-        const searchResults = document.getElementById('searchResults');
         const selectedMovie = document.getElementById('selectedMovie');
         const movieInfo = document.getElementById('movieInfo');
         const recommendations = document.getElementById('recommendations');
         const recommendationsList = document.getElementById('recommendationsList');
         const stats = document.getElementById('stats');
+        const movieList = document.getElementById('movieList');
+        const movieCount = document.getElementById('movieCount');
+
+        let allMovies = [];
 
         // Load stats
         fetch('/api/stats')
@@ -54,49 +65,58 @@
                 stats.textContent = `${data.total_movies.toLocaleString()} movies indexed`;
             });
 
-        // Search movies
+        // Load all movies
+        fetch('/api/movies')
+            .then(r => r.json())
+            .then(data => {
+                allMovies = data.movies;
+                displayMovies(allMovies);
+            });
+
+        // Display movies
+        function displayMovies(movies) {
+            movieCount.textContent = `(${movies.length.toLocaleString()})`;
+
+            movieList.innerHTML = movies.map(movie => `
+                <div class="movie-list-item" data-idx="${movie.idx}">
+                    <div class="movie-list-title">
+                        <strong>${movie.title}</strong> (${movie.year})
+                    </div>
+                    <div class="movie-list-stats">
+                        ${movie.vote_average}/10 • ${movie.vote_count.toLocaleString()} votes
+                    </div>
+                </div>
+            `).join('');
+
+            // Add click handlers
+            document.querySelectorAll('.movie-list-item').forEach(el => {
+                el.addEventListener('click', () => {
+                    selectMovie(parseInt(el.dataset.idx));
+                });
+            });
+        }
+
+        // Filter movies
         let searchTimeout;
         searchInput.addEventListener('input', (e) => {
             clearTimeout(searchTimeout);
-            const query = e.target.value.trim();
+            const query = e.target.value.trim().toLowerCase();
 
-            if (query.length < 2) {
-                searchResults.innerHTML = '';
-                searchResults.style.display = 'none';
+            if (query.length === 0) {
+                displayMovies(allMovies);
                 return;
             }
 
             searchTimeout = setTimeout(() => {
-                fetch(`/api/search?q=${encodeURIComponent(query)}`)
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data.results.length === 0) {
-                            searchResults.innerHTML = '<div class="search-result">No results found</div>';
-                        } else {
-                            searchResults.innerHTML = data.results.map(movie => `
-                                <div class="search-result" data-idx="${movie.idx}">
-                                    <strong>${movie.title}</strong> (${movie.year})
-                                    <br>
-                                    <small>${movie.vote_count.toLocaleString()} votes • ${movie.vote_average}/10</small>
-                                </div>
-                            `).join('');
-
-                            // Add click handlers
-                            document.querySelectorAll('.search-result').forEach(el => {
-                                el.addEventListener('click', () => {
-                                    selectMovie(parseInt(el.dataset.idx));
-                                });
-                            });
-                        }
-                        searchResults.style.display = 'block';
-                    });
-            }, 300);
+                const filtered = allMovies.filter(movie =>
+                    movie.title.toLowerCase().includes(query)
+                );
+                displayMovies(filtered);
+            }, 200);
         });
 
         // Select a movie
         function selectMovie(idx) {
-            searchResults.innerHTML = '';
-            searchResults.style.display = 'none';
             recommendations.style.display = 'none';
 
             fetch(`/api/recommend/${idx}`)
@@ -134,12 +154,6 @@
                 });
         }
 
-        // Close search results when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
-                searchResults.style.display = 'none';
-            }
-        });
     </script>
 </body>
 </html>

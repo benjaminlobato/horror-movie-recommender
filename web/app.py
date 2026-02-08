@@ -191,5 +191,24 @@ def stats():
         'avg_rating': float(movies_df['vote_average'].mean())
     })
 
+@app.route('/api/movies')
+def get_movies():
+    """Get all movies for browsing"""
+    # Sort by title
+    sorted_df = movies_df.sort_values('title')
+
+    movies = []
+    for idx, row in sorted_df.iterrows():
+        movies.append({
+            'idx': int(idx),
+            'tmdb_id': int(row['tmdb_id']),
+            'title': row['title'],
+            'year': str(row['year']),
+            'vote_count': int(row['vote_count']),
+            'vote_average': float(row['vote_average'])
+        })
+
+    return jsonify({'movies': movies})
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)
