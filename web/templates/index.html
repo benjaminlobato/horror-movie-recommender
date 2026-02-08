@@ -356,7 +356,7 @@
                             <div class="movie-stats">
                                 <span><strong>👥 Users who reviewed:</strong> ${data.movie.user_count}</span>
                                 <span><strong>🎬 Director:</strong> ${data.movie.director || 'Unknown'}</span>
-                                <span><strong>🎭 Genres:</strong> ${data.movie.genres ? JSON.parse(data.movie.genres).join(', ') : 'N/A'}</span>
+                                <span><strong>🎭 Genres:</strong> ${data.movie.genres || 'N/A'}</span>
                             </div>
                         </div>
                     `;
