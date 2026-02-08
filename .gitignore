@@ -34,3 +34,20 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Large data files
+data/letterboxd/*.jsonl
+data/letterboxd/*.parquet
+data/universe_candidates.csv
+data/*.db
+*.db
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Environment
+.env
+venv/
+

@@ -4,20 +4,234 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Horror Movie Recommender 🎃</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            color: #ff6b6b;
+        }
+
+        .subtitle {
+            font-size: 1.2em;
+            color: #aaa;
+        }
+
+        .algorithm-badge {
+            display: inline-block;
+            background: #0f3460;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin-top: 10px;
+            border: 1px solid #16213e;
+        }
+
+        .search-section {
+            margin-bottom: 30px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1em;
+            border: 2px solid #0f3460;
+            border-radius: 8px;
+            background: #0f3460;
+            color: #eee;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            border-color: #ff6b6b;
+        }
+
+        .movie-list-section {
+            margin-bottom: 40px;
+        }
+
+        .movie-list {
+            display: grid;
+            gap: 10px;
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 10px;
+            background: #0f3460;
+            border-radius: 8px;
+        }
+
+        .movie-list-item {
+            padding: 15px;
+            background: #16213e;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .movie-list-item:hover {
+            background: #1a1a2e;
+            border-color: #ff6b6b;
+            transform: translateX(5px);
+        }
+
+        .movie-list-title {
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+
+        .movie-list-stats {
+            font-size: 0.9em;
+            color: #aaa;
+        }
+
+        .horror-club-badge {
+            display: inline-block;
+            background: #ff6b6b;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            margin-left: 8px;
+        }
+
+        .selected-movie, .recommendations {
+            margin-bottom: 40px;
+        }
+
+        h2 {
+            font-size: 2em;
+            margin-bottom: 20px;
+            color: #ff6b6b;
+        }
+
+        .movie-card {
+            background: #0f3460;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #ff6b6b;
+            position: relative;
+        }
+
+        .movie-card.featured {
+            background: #16213e;
+            border-left: 6px solid #ff6b6b;
+        }
+
+        .movie-card h3 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        .movie-stats {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            font-size: 0.95em;
+            color: #aaa;
+        }
+
+        .movie-stats span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .tier-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .excellent-match .tier-badge {
+            background: #2ecc71;
+            color: #fff;
+        }
+
+        .strong-match .tier-badge {
+            background: #3498db;
+            color: #fff;
+        }
+
+        .good-match .tier-badge {
+            background: #9b59b6;
+            color: #fff;
+        }
+
+        .worth-exploring .tier-badge {
+            background: #95a5a6;
+            color: #fff;
+        }
+
+        .rank {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 2em;
+            font-weight: bold;
+            color: #ff6b6b;
+            opacity: 0.3;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #aaa;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 60px;
+            padding: 20px;
+            color: #aaa;
+            border-top: 1px solid #0f3460;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>🎃 Horror Movie Recommender</h1>
             <p class="subtitle">Finding hidden gems for horror weirdos</p>
+            <div class="algorithm-badge">
+                🧠 Hybrid Algorithm: 70% User Overlap + 30% Content Similarity
+            </div>
         </header>
 
         <div class="search-section">
             <input
                 type="text"
                 id="searchInput"
-                placeholder="Filter movies..."
+                placeholder="Search for a horror movie..."
                 autocomplete="off"
             >
         </div>
@@ -37,12 +251,12 @@
         </div>
 
         <div id="recommendations" class="recommendations" style="display: none;">
-            <h2>Recommendations</h2>
+            <h2>Hybrid Recommendations</h2>
             <div id="recommendationsList"></div>
         </div>
 
         <footer>
-            <p>Powered by TMDB | <span id="stats"></span></p>
+            <p><span id="stats"></span></p>
         </footer>
     </div>
 
@@ -62,7 +276,11 @@
         fetch('/api/stats')
             .then(r => r.json())
             .then(data => {
-                stats.textContent = `${data.total_movies.toLocaleString()} movies indexed`;
+                stats.innerHTML = `
+                    <strong>${data.total_movies.toLocaleString()} movies</strong> •
+                    <strong>${data.total_users.toLocaleString()} users</strong> •
+                    <strong>${data.total_reviews.toLocaleString()} reviews</strong>
+                `;
             });
 
         // Load all movies
@@ -78,12 +296,14 @@
             movieCount.textContent = `(${movies.length.toLocaleString()})`;
 
             movieList.innerHTML = movies.map(movie => `
-                <div class="movie-list-item" data-idx="${movie.idx}">
+                <div class="movie-list-item" data-title="${movie.title.toLowerCase()}">
                     <div class="movie-list-title">
-                        <strong>${movie.title}</strong> (${movie.year})
+                        <strong>${movie.title}</strong>
+                        ${movie.is_horror_club ? '<span class="horror-club-badge">Horror Club</span>' : ''}
                     </div>
                     <div class="movie-list-stats">
-                        ${movie.vote_average}/10 • ${movie.vote_count.toLocaleString()} votes
+                        ${movie.review_count} review${movie.review_count !== 1 ? 's' : ''} •
+                        ${movie.director || 'Unknown director'}
                     </div>
                 </div>
             `).join('');
@@ -91,7 +311,7 @@
             // Add click handlers
             document.querySelectorAll('.movie-list-item').forEach(el => {
                 el.addEventListener('click', () => {
-                    selectMovie(parseInt(el.dataset.idx));
+                    selectMovie(el.dataset.title);
                 });
             });
         }
@@ -116,37 +336,51 @@
         });
 
         // Select a movie
-        function selectMovie(idx) {
+        function selectMovie(title) {
             recommendations.style.display = 'none';
+            selectedMovie.style.display = 'none';
+            recommendationsList.innerHTML = '<div class="loading">Loading recommendations...</div>';
 
-            fetch(`/api/recommend/${idx}`)
+            fetch(`/api/recommend/${encodeURIComponent(title)}`)
                 .then(r => r.json())
                 .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+
                     // Display selected movie
                     movieInfo.innerHTML = `
                         <div class="movie-card featured">
-                            <h3>${data.movie.title} (${data.movie.year})</h3>
-                            <p>
-                                <strong>Rating:</strong> ${data.movie.vote_average}/10
-                                | <strong>Votes:</strong> ${data.movie.vote_count.toLocaleString()}
-                            </p>
+                            <h3>${data.movie.title}</h3>
+                            <div class="movie-stats">
+                                <span><strong>👥 Users who reviewed:</strong> ${data.movie.user_count}</span>
+                                <span><strong>🎬 Director:</strong> ${data.movie.director || 'Unknown'}</span>
+                                <span><strong>🎭 Genres:</strong> ${data.movie.genres ? JSON.parse(data.movie.genres).join(', ') : 'N/A'}</span>
+                            </div>
                         </div>
                     `;
                     selectedMovie.style.display = 'block';
 
                     // Display recommendations
-                    recommendationsList.innerHTML = data.recommendations.map((rec, i) => `
-                        <div class="movie-card ${rec.tier.toLowerCase().replace(' ', '-')}">
-                            <div class="rank">#${i + 1}</div>
-                            <div class="tier-badge">${rec.tier_emoji} ${rec.tier}</div>
-                            <h3>${rec.title} (${rec.year})</h3>
-                            <div class="movie-stats">
-                                <span>Similarity: ${(rec.similarity * 100).toFixed(1)}%</span>
-                                <span>Rating: ${rec.vote_average}/10</span>
-                                <span>Votes: ${rec.vote_count.toLocaleString()}</span>
+                    if (data.recommendations.length === 0) {
+                        recommendationsList.innerHTML = '<div class="loading">No recommendations found. Try adjusting the similarity threshold.</div>';
+                    } else {
+                        recommendationsList.innerHTML = data.recommendations.map((rec, i) => `
+                            <div class="movie-card ${rec.tier.toLowerCase().replace(/\s+/g, '-')}">
+                                <div class="rank">#${i + 1}</div>
+                                <div class="tier-badge">${rec.tier_emoji} ${rec.tier}</div>
+                                <h3>${rec.title}</h3>
+                                <div class="movie-stats">
+                                    <span><strong>👥 User Overlap:</strong> ${rec.user_overlap} user${rec.user_overlap !== 1 ? 's' : ''}</span>
+                                    <span><strong>🎯 Content Similarity:</strong> ${(rec.content_similarity * 100).toFixed(1)}%</span>
+                                    <span><strong>⭐ Hybrid Score:</strong> ${rec.hybrid_score.toFixed(3)}</span>
+                                    <span><strong>💬 Reviews:</strong> ${rec.review_count}</span>
+                                </div>
+                                ${rec.director ? `<div style="margin-top: 8px; color: #aaa;">🎬 ${rec.director}</div>` : ''}
                             </div>
-                        </div>
-                    `).join('');
+                        `).join('');
+                    }
                     recommendations.style.display = 'block';
 
                     // Scroll to recommendations
