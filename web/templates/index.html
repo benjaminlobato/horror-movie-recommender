@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Horror Movie Recommender 🎃</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎃 Horror Movie Recommender</h1>
+            <p class="subtitle">Finding hidden gems for horror weirdos</p>
+        </header>
+
+        <div class="search-section">
+            <input
+                type="text"
+                id="searchInput"
+                placeholder="Search for a horror movie..."
+                autocomplete="off"
+            >
+            <div id="searchResults" class="search-results"></div>
+        </div>
+
+        <div id="selectedMovie" class="selected-movie" style="display: none;">
+            <h2>Selected Movie</h2>
+            <div id="movieInfo"></div>
+        </div>
+
+        <div id="recommendations" class="recommendations" style="display: none;">
+            <h2>Recommendations</h2>
+            <div id="recommendationsList"></div>
+        </div>
+
+        <footer>
+            <p>Powered by TMDB | <span id="stats"></span></p>
+        </footer>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const searchResults = document.getElementById('searchResults');
+        const selectedMovie = document.getElementById('selectedMovie');
+        const movieInfo = document.getElementById('movieInfo');
+        const recommendations = document.getElementById('recommendations');
+        const recommendationsList = document.getElementById('recommendationsList');
+        const stats = document.getElementById('stats');
+
+        // Load stats
+        fetch('/api/stats')
+            .then(r => r.json())
+            .then(data => {
+                stats.textContent = `${data.total_movies.toLocaleString()} movies indexed`;
+            });
+
+        // Search movies
+        let searchTimeout;
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            const query = e.target.value.trim();
+
+            if (query.length < 2) {
+                searchResults.innerHTML = '';
+                searchResults.style.display = 'none';
+                return;
+            }
+
+            searchTimeout = setTimeout(() => {
+                fetch(`/api/search?q=${encodeURIComponent(query)}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.results.length === 0) {
+                            searchResults.innerHTML = '<div class="search-result">No results found</div>';
+                        } else {
+                            searchResults.innerHTML = data.results.map(movie => `
+                                <div class="search-result" data-idx="${movie.idx}">
+                                    <strong>${movie.title}</strong> (${movie.year})
+                                    <br>
+                                    <small>${movie.vote_count.toLocaleString()} votes • ${movie.vote_average}/10</small>
+                                </div>
+                            `).join('');
+
+                            // Add click handlers
+                            document.querySelectorAll('.search-result').forEach(el => {
+                                el.addEventListener('click', () => {
+                                    selectMovie(parseInt(el.dataset.idx));
+                                });
+                            });
+                        }
+                        searchResults.style.display = 'block';
+                    });
+            }, 300);
+        });
+
+        // Select a movie
+        function selectMovie(idx) {
+            searchResults.innerHTML = '';
+            searchResults.style.display = 'none';
+            recommendations.style.display = 'none';
+
+            fetch(`/api/recommend/${idx}`)
+                .then(r => r.json())
+                .then(data => {
+                    // Display selected movie
+                    movieInfo.innerHTML = `
+                        <div class="movie-card featured">
+                            <h3>${data.movie.title} (${data.movie.year})</h3>
+                            <p>
+                                <strong>Rating:</strong> ${data.movie.vote_average}/10
+                                | <strong>Votes:</strong> ${data.movie.vote_count.toLocaleString()}
+                            </p>
+                        </div>
+                    `;
+                    selectedMovie.style.display = 'block';
+
+                    // Display recommendations
+                    recommendationsList.innerHTML = data.recommendations.map((rec, i) => `
+                        <div class="movie-card ${rec.tier.toLowerCase().replace(' ', '-')}">
+                            <div class="rank">#${i + 1}</div>
+                            <div class="tier-badge">${rec.tier_emoji} ${rec.tier}</div>
+                            <h3>${rec.title} (${rec.year})</h3>
+                            <div class="movie-stats">
+                                <span>Similarity: ${(rec.similarity * 100).toFixed(1)}%</span>
+                                <span>Rating: ${rec.vote_average}/10</span>
+                                <span>Votes: ${rec.vote_count.toLocaleString()}</span>
+                            </div>
+                        </div>
+                    `).join('');
+                    recommendations.style.display = 'block';
+
+                    // Scroll to recommendations
+                    recommendations.scrollIntoView({ behavior: 'smooth' });
+                });
+        }
+
+        // Close search results when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+                searchResults.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
