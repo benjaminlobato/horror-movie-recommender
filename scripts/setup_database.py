@@ -97,11 +97,11 @@ def setup_sqlite():
         schema_sql = schema_sql.replace('NUMERIC', 'REAL')
         schema_sql = schema_sql.replace('TIMESTAMP', 'TEXT')
         schema_sql = schema_sql.replace('DEFAULT NOW()', "DEFAULT (datetime('now'))")
-
-        # Remove PostgreSQL-specific syntax
-        schema_sql = schema_sql.replace('CREATE OR REPLACE FUNCTION', '-- CREATE OR REPLACE FUNCTION')
-        schema_sql = schema_sql.replace('CREATE TRIGGER', '-- CREATE TRIGGER')
         schema_sql = schema_sql.replace('USING GIN', '')
+
+        # Remove PostgreSQL-specific functions and triggers (everything after FUNCTIONS comment)
+        if '-- FUNCTIONS' in schema_sql:
+            schema_sql = schema_sql.split('-- FUNCTIONS')[0]
 
         # Execute schema
         cursor.executescript(schema_sql)

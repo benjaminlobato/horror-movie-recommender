@@ -57,7 +57,7 @@ with engine.connect() as conn:
         if watched_by_club:
             club_count += 1
 
-        # Insert movie
+        # Insert movie (SQLite compatible)
         insert_sql = text("""
             INSERT INTO movies (
                 title, year, overview,
@@ -86,7 +86,7 @@ with engine.connect() as conn:
                 tmdb_vote_average = EXCLUDED.tmdb_vote_average,
                 budget = EXCLUDED.budget,
                 watched_by_club = EXCLUDED.watched_by_club,
-                updated_at = NOW()
+                updated_at = datetime('now')
         """)
 
         try:
