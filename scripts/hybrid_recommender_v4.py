@@ -7,8 +7,12 @@ Uses the titouann/letterboxd-10m-movies-ratings-2025 dataset (10.4M ratings,
 
 Combines SVD movie-movie similarity (70%) + TF-IDF content similarity (30%).
 Same API contract as v3: recommend(title, top_n) → (recs, error, method).
+
+Movie universe loaded from master-movies.json (exported from Supabase
+master_movies table via movie-night/scripts/export-master-movies.py).
+Uses tmdb_id as the internal movie ID throughout.
 """
-import sqlite3
+import json
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -20,7 +24,7 @@ from scipy.sparse.linalg import svds
 project_root = Path(__file__).parent.parent
 
 # Paths
-db_path = project_root / 'data' / 'horror_recommender_v2.db'
+json_path = project_root.parent / 'movie-night' / 'data' / 'master-movies.json'
 parquet_path = project_root / 'data' / 'letterboxd-ratings' / 'titouann_10m.parquet'
 
 print("=" * 70)
@@ -28,70 +32,54 @@ print("LOADING HYBRID RECOMMENDER V4 (SVD)")
 print("=" * 70)
 
 # ============================================================================
-# STEP 1: LOAD MOVIE UNIVERSE
+# STEP 1: LOAD MOVIE UNIVERSE FROM MASTER-MOVIES.JSON
 # ============================================================================
-print("\n1. Loading movie universe from horror_movies table...")
+print(f"\n1. Loading movie universe from {json_path.name}...")
 
-conn = sqlite3.connect(db_path)
+if not json_path.exists():
+    raise FileNotFoundError(
+        f"{json_path} not found. Run: python movie-night/scripts/export-master-movies.py"
+    )
 
-query = """
-    SELECT
-        id as movie_id,
-        title,
-        year,
-        director,
-        genres,
-        "cast",
-        data_source,
-        is_true_horror,
-        tmdb_id,
-        imdb_id,
-        letterboxd_id,
-        poster_url,
-        rating
-    FROM horror_movies
-    ORDER BY title
-"""
+with open(json_path) as f:
+    movies_raw = json.load(f)
 
-movies_df = pd.read_sql_query(query, conn)
-conn.close()
+n_movies_total = len(movies_raw)
+n_horror = sum(1 for m in movies_raw if m.get('is_horror'))
+print(f"   Loaded {n_movies_total:,} movies ({n_horror:,} horror)")
 
-print(f"   Loaded {len(movies_df):,} movies")
-print(f"   - {len(movies_df[movies_df['data_source'] == 'horror_club']):,} horror club")
-print(f"   - {len(movies_df[movies_df['data_source'] == 'letterboxd_coreviews']):,} letterboxd coreviews")
-print(f"   - {len(movies_df[movies_df['is_true_horror'] == 1]):,} with Horror genre")
-
-# Create lookups
+# Create lookups — tmdb_id IS the movie_id now
 title_to_movie_id = {}
 tmdb_to_movie_id = {}
 movie_id_to_metadata = {}
 movie_id_to_lb_slug = {}
 
-for _, row in movies_df.iterrows():
-    movie_id = row['movie_id']
-    title = row['title']
+for m in movies_raw:
+    movie_id = m['tmdb_id']
+    title = m.get('title', '')
 
     title_to_movie_id[title.lower()] = movie_id
-    if pd.notna(row['tmdb_id']):
-        tmdb_to_movie_id[int(row['tmdb_id'])] = movie_id
+    tmdb_to_movie_id[movie_id] = movie_id  # identity mapping
 
     movie_id_to_metadata[movie_id] = {
         'title': title,
-        'year': row['year'],
-        'director': row['director'] if pd.notna(row['director']) else '',
-        'genres': row['genres'] if pd.notna(row['genres']) else '',
-        'cast': row['cast'] if pd.notna(row['cast']) else '',
-        'data_source': row['data_source'],
-        'is_true_horror': row['is_true_horror'],
-        'tmdb_id': row['tmdb_id'],
-        'imdb_id': row['imdb_id'],
-        'letterboxd_id': row['letterboxd_id'],
-        'poster_url': row['poster_url'],
-        'rating': row['rating']
+        'year': m.get('year'),
+        'director': m.get('director') or '',
+        'tmdb_genres': m.get('tmdb_genres') or [],
+        'keywords': m.get('keywords') or [],
+        'is_horror': m.get('is_horror', False),
+        'tmdb_id': movie_id,
+        'imdb_id': m.get('imdb_id'),
+        'letterboxd_id': m.get('letterboxd_id'),
+        'poster_path': m.get('poster_path'),
+        'vote_average': m.get('vote_average'),
+        'vote_count': m.get('vote_count'),
+        'origin_country': m.get('origin_country') or [],
+        'top_cast': m.get('top_cast') or [],
     }
 
-    if pd.notna(row['letterboxd_id']):
-        movie_id_to_lb_slug[movie_id] = row['letterboxd_id']
+    if m.get('letterboxd_id'):
+        movie_id_to_lb_slug[movie_id] = m['letterboxd_id']
 
 # Reverse lookups: letterboxd slug → movie_id(s)
 # Multiple movie_ids can share the same letterboxd slug (duplicates in DB).
@@ -181,7 +169,7 @@ print(f"   SVD similarity matrix ready ({len(movie_id_to_svd_idx):,} movies)")
 del ratings_df, sparse_matrix, centered, U, Vt, movie_factors
 
 # ============================================================================
-# STEP 3: BUILD CONTENT SIMILARITY MATRIX (TF-IDF) — same as v3
+# STEP 3: BUILD CONTENT SIMILARITY MATRIX (TF-IDF) — genres + director + keywords
 # ============================================================================
 print("\n3. Building content similarity matrix...")
 
@@ -191,9 +179,9 @@ movie_ids_ordered = []
 for movie_id in sorted(movie_id_to_metadata.keys()):
     metadata = movie_id_to_metadata[movie_id]
     features = ' '.join([
-        metadata['genres'],
-        metadata['director'],
-        metadata['cast']
+        ' '.join(metadata.get('tmdb_genres') or []),
+        metadata.get('director') or '',
+        ' '.join(metadata.get('keywords') or []),
     ])
     movie_features.append(features)
     movie_ids_ordered.append(movie_id)
@@ -252,56 +240,58 @@ def recommend_hybrid(movie_title, top_n=20, max_svd_weight=0.7,
             return None, "Movie not found in universe"
         movie_id = title_to_movie_id[movie_title_lower]
 
-    # Must be in SVD matrix — no fallback
     svd_idx = movie_id_to_svd_idx.get(movie_id)
-    if svd_idx is None:
-        return None, "Movie not in SVD matrix (no ratings data)"
 
     content_idx = movie_id_to_content_idx.get(movie_id)
     if content_idx is None:
         return None, "Movie not in content matrix"
 
     source_ratings = movie_rating_counts.get(movie_id, 0)
+    has_svd = svd_idx is not None
 
     # Get similarity rows
-    svd_sims = svd_similarity[svd_idx]
+    svd_sims = svd_similarity[svd_idx] if has_svd else None
     content_sims = content_similarity_matrix[content_idx]
 
     recommendations = []
 
-    # Score all movies in SVD matrix as candidates
-    for candidate_id, candidate_svd_idx in movie_id_to_svd_idx.items():
+    # Score all movies in content matrix as candidates
+    for candidate_id, candidate_content_idx in movie_id_to_content_idx.items():
         if candidate_id == movie_id:
             continue
 
-        if filter_true_horror and not movie_id_to_metadata[candidate_id]['is_true_horror']:
+        if filter_true_horror and not movie_id_to_metadata[candidate_id].get('is_horror'):
             continue
 
-        candidate_content_idx = movie_id_to_content_idx.get(candidate_id)
-        if candidate_content_idx is None:
-            continue
-
-        svd_sim = float(svd_sims[candidate_svd_idx])
         content_sim = float(content_sims[candidate_content_idx])
 
         if content_sim < min_content_similarity:
             continue
 
-        # Confidence ramp: trust SVD less when either movie has few ratings
-        candidate_ratings = movie_rating_counts.get(candidate_id, 0)
-        min_ratings = min(source_ratings, candidate_ratings)
-        svd_confidence = min(min_ratings / SVD_CONFIDENCE_THRESHOLD, 1.0)
-        svd_weight = max_svd_weight * svd_confidence
-        content_weight = 1.0 - svd_weight
+        # SVD similarity if both source and candidate have SVD data
+        candidate_svd_idx = movie_id_to_svd_idx.get(candidate_id)
+        if has_svd and candidate_svd_idx is not None:
+            svd_sim = float(svd_sims[candidate_svd_idx])
 
-        hybrid_score = svd_weight * svd_sim + content_weight * content_sim
+            # Confidence ramp: trust SVD less when either movie has few ratings
+            candidate_ratings = movie_rating_counts.get(candidate_id, 0)
+            min_ratings = min(source_ratings, candidate_ratings)
+            svd_confidence = min(min_ratings / SVD_CONFIDENCE_THRESHOLD, 1.0)
+            svd_weight = max_svd_weight * svd_confidence
+            content_weight = 1.0 - svd_weight
+
+            hybrid_score = svd_weight * svd_sim + content_weight * content_sim
+        else:
+            # No SVD data for source or candidate — pure content
+            svd_sim = 0.0
+            hybrid_score = content_sim
 
         metadata = movie_id_to_metadata[candidate_id]
         recommendations.append((
             candidate_id,
             metadata['title'],
             hybrid_score,
-            svd_sim,       # slot 3: SVD similarity (was user_count in v3)
+            svd_sim,
             content_sim,
             metadata
         ))
@@ -321,6 +311,13 @@ def recommend(movie_title, top_n=20, filter_true_horror=False, tmdb_id=None):
     Returns:
         (recommendations, error, method)
     """
+    # Resolve movie_id to determine method
+    if tmdb_id is not None:
+        movie_id = tmdb_to_movie_id.get(int(tmdb_id))
+    else:
+        movie_id = title_to_movie_id.get(movie_title.lower())
+    has_svd = movie_id is not None and movie_id in movie_id_to_svd_idx
+
     results, error = recommend_hybrid(
         movie_title,
         top_n=top_n,
@@ -329,7 +326,8 @@ def recommend(movie_title, top_n=20, filter_true_horror=False, tmdb_id=None):
     )
 
     if results is not None:
-        return results, None, 'hybrid'
+        method = 'hybrid' if has_svd else 'content_only'
+        return results, None, method
 
     return None, error, None
 
@@ -362,8 +360,8 @@ def search_movies(query, limit=20):
                 'movie_id': movie_id,
                 'title': metadata['title'],
                 'year': metadata['year'],
-                'genres': metadata['genres'],
-                'is_true_horror': metadata['is_true_horror']
+                'tmdb_genres': metadata.get('tmdb_genres', []),
+                'is_horror': metadata.get('is_horror', False)
             })
 
     return matches[:limit]
@@ -374,15 +372,15 @@ def search_movies(query, limit=20):
 # ============================================================================
 
 movies_with_svd = len(movie_id_to_svd_idx)
-movies_without_svd = len(movies_df) - movies_with_svd
+movies_without_svd = n_movies_total - movies_with_svd
 
 print("\n" + "=" * 70)
 print("RECOMMENDER V4 (SVD) READY")
 print("=" * 70)
-print(f"Total movies in universe:        {len(movies_df):,}")
+print(f"Total movies in universe:        {n_movies_total:,}")
 print(f"  - With SVD data (hybrid):      {movies_with_svd:,}")
-print(f"  - Without SVD (no recs):       {movies_without_svd:,}")
-print(f"Coverage:                         {movies_with_svd/len(movies_df)*100:.1f}%")
+print(f"  - Without SVD (content only):  {movies_without_svd:,}")
+print(f"Coverage:                         {movies_with_svd/n_movies_total*100:.1f}%")
 print(f"SVD confidence threshold:        {SVD_CONFIDENCE_THRESHOLD} ratings")
 print(f"\nSVD latent factors:              {k}")
 print(f"Titouann ratings used:           {sum(movie_rating_counts.values()):,}")
@@ -421,5 +419,5 @@ if __name__ == "__main__":
         print("-" * 82)
 
         for i, (movie_id, title, hybrid_score, svd_sim, content_sim, metadata) in enumerate(results, 1):
-            year = metadata['year'] if pd.notna(metadata['year']) else 'N/A'
+            year = metadata.get('year') or 'N/A'
             print(f"{i:<4} {title[:44]:<45} {str(year):<6} {hybrid_score:.3f}    {svd_sim:.3f}    {content_sim:.3f}")
